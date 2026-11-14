@@ -1,90 +1,101 @@
 """Permissions for Home Assistant."""
-import logging
-from typing import (  # noqa: F401
-    cast, Any, Callable, Dict, List, Mapping, Set, Tuple, Union)
 
-import voluptuous as vol
+from collections.abc import Callable, Iterable
+from typing import TYPE_CHECKING, override
 
-from homeassistant.core import State
+import probatio
 
 from .const import CAT_ENTITIES
-from .types import CategoryType, PolicyType
 from .entities import ENTITY_POLICY_SCHEMA, compile_entities
-from .merge import merge_policies  # noqa
+from .merge import merge_policies
+from .models import PermissionLookup
+from .types import PolicyType
+from .util import test_all
 
-POLICY_SCHEMA = vol.Schema({
-    vol.Optional(CAT_ENTITIES): ENTITY_POLICY_SCHEMA
-})
+if TYPE_CHECKING:
+    from ..models import User
 
-_LOGGER = logging.getLogger(__name__)
+POLICY_SCHEMA = probatio.Schema({probatio.Optional(CAT_ENTITIES): ENTITY_POLICY_SCHEMA})
+
+__all__ = [
+    "POLICY_SCHEMA",
+    "AbstractPermissions",
+    "OwnerPermissions",
+    "PermissionLookup",
+    "PolicyPermissions",
+    "PolicyType",
+    "filter_entity_ids_by_permission",
+    "merge_policies",
+]
+
+
+def filter_entity_ids_by_permission(
+    user: User, entity_ids: Iterable[str], key: str
+) -> list[str]:
+    """Filter entity IDs to those the user can access for the given policy key."""
+    if user.is_admin or user.permissions.access_all_entities(key):
+        return list(entity_ids)
+    check_entity = user.permissions.check_entity
+    return [entity_id for entity_id in entity_ids if check_entity(entity_id, key)]
 
 
 class AbstractPermissions:
     """Default permissions class."""
 
-    def check_entity(self, entity_id: str, key: str) -> bool:
-        """Test if we can access entity."""
+    _cached_entity_func: Callable[[str, str], bool] | None = None
+
+    def _entity_func(self) -> Callable[[str, str], bool]:
+        """Return a function that can test entity access."""
         raise NotImplementedError
 
-    def filter_states(self, states: List[State]) -> List[State]:
-        """Filter a list of states for what the user is allowed to see."""
+    def access_all_entities(self, key: str) -> bool:
+        """Check if we have a certain access to all entities."""
         raise NotImplementedError
+
+    def check_entity(self, entity_id: str, key: str) -> bool:
+        """Check if we can access entity."""
+        if (entity_func := self._cached_entity_func) is None:
+            entity_func = self._cached_entity_func = self._entity_func()
+
+        return entity_func(entity_id, key)
 
 
 class PolicyPermissions(AbstractPermissions):
     """Handle permissions."""
 
-    def __init__(self, policy: PolicyType) -> None:
+    def __init__(self, policy: PolicyType, perm_lookup: PermissionLookup) -> None:
         """Initialize the permission class."""
         self._policy = policy
-        self._compiled = {}  # type: Dict[str, Callable[..., bool]]
+        self._perm_lookup = perm_lookup
 
-    def check_entity(self, entity_id: str, key: str) -> bool:
-        """Test if we can access entity."""
-        func = self._policy_func(CAT_ENTITIES, compile_entities)
-        return func(entity_id, (key,))
+    @override
+    def access_all_entities(self, key: str) -> bool:
+        """Check if we have a certain access to all entities."""
+        return test_all(self._policy.get(CAT_ENTITIES), key)
 
-    def filter_states(self, states: List[State]) -> List[State]:
-        """Filter a list of states for what the user is allowed to see."""
-        func = self._policy_func(CAT_ENTITIES, compile_entities)
-        keys = ('read',)
-        return [entity for entity in states if func(entity.entity_id, keys)]
+    @override
+    def _entity_func(self) -> Callable[[str, str], bool]:
+        """Return a function that can test entity access."""
+        return compile_entities(self._policy.get(CAT_ENTITIES), self._perm_lookup)
 
-    def _policy_func(self, category: str,
-                     compile_func: Callable[[CategoryType], Callable]) \
-            -> Callable[..., bool]:
-        """Get a policy function."""
-        func = self._compiled.get(category)
-
-        if func:
-            return func
-
-        func = self._compiled[category] = compile_func(
-            self._policy.get(category))
-
-        _LOGGER.debug("Compiled %s func: %s", category, func)
-
-        return func
-
-    def __eq__(self, other: Any) -> bool:
+    @override
+    def __eq__(self, other: object) -> bool:
         """Equals check."""
-        # pylint: disable=protected-access
-        return (isinstance(other, PolicyPermissions) and
-                other._policy == self._policy)
+        return isinstance(other, PolicyPermissions) and other._policy == self._policy
 
 
 class _OwnerPermissions(AbstractPermissions):
     """Owner permissions."""
 
-    # pylint: disable=no-self-use
-
-    def check_entity(self, entity_id: str, key: str) -> bool:
-        """Test if we can access entity."""
+    @override
+    def access_all_entities(self, key: str) -> bool:
+        """Check if we have a certain access to all entities."""
         return True
 
-    def filter_states(self, states: List[State]) -> List[State]:
-        """Filter a list of states for what the user is allowed to see."""
-        return states
+    @override
+    def _entity_func(self) -> Callable[[str, str], bool]:
+        """Return a function that can test entity access."""
+        return lambda entity_id, key: True
 
 
-OwnerPermissions = _OwnerPermissions()  # pylint: disable=invalid-name
+OwnerPermissions = _OwnerPermissions()

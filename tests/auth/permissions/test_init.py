@@ -1,34 +1,49 @@
-"""Tests for the auth permission system."""
-from homeassistant.core import State
-from homeassistant.auth import permissions
+"""Tests for the permissions module."""
+
+from pytest_homeassistant.common import MockUser
+
+from homeassistant.auth.permissions import filter_entity_ids_by_permission
+from homeassistant.auth.permissions.const import POLICY_READ
+from homeassistant.core import HomeAssistant
 
 
-def test_policy_perm_filter_states():
-    """Test filtering entitites."""
-    states = [
-        State('light.kitchen', 'on'),
-        State('light.living_room', 'off'),
-        State('light.balcony', 'on'),
-    ]
-    perm = permissions.PolicyPermissions({
-        'entities': {
-            'entity_ids': {
-                'light.kitchen': True,
-                'light.balcony': True,
-            }
-        }
-    })
-    filtered = perm.filter_states(states)
-    assert len(filtered) == 2
-    assert filtered == [states[0], states[2]]
+async def test_filter_entity_ids_by_permission_admin(hass: HomeAssistant) -> None:
+    """Test admins receive the input entity IDs unchanged."""
+    user = MockUser(is_owner=True)
+    user.mock_policy({"entities": {"entity_ids": {"light.allowed": True}}})
+    assert user.is_admin
+
+    assert filter_entity_ids_by_permission(
+        user, ["light.allowed", "light.forbidden"], POLICY_READ
+    ) == ["light.allowed", "light.forbidden"]
 
 
-def test_owner_permissions():
-    """Test owner permissions access all."""
-    assert permissions.OwnerPermissions.check_entity('light.kitchen', 'write')
-    states = [
-        State('light.kitchen', 'on'),
-        State('light.living_room', 'off'),
-        State('light.balcony', 'on'),
-    ]
-    assert permissions.OwnerPermissions.filter_states(states) == states
+async def test_filter_entity_ids_by_permission_access_all(hass: HomeAssistant) -> None:
+    """Test users with access_all_entities receive the input unchanged."""
+    user = MockUser()
+    user.mock_policy({"entities": {"all": True}})
+    assert not user.is_admin
+
+    assert filter_entity_ids_by_permission(
+        user, ["light.a", "light.b"], POLICY_READ
+    ) == ["light.a", "light.b"]
+
+
+async def test_filter_entity_ids_by_permission_filtered(hass: HomeAssistant) -> None:
+    """Test users without full access have entity IDs filtered."""
+    user = MockUser()
+    user.mock_policy({"entities": {"entity_ids": {"light.allowed": True}}})
+    assert not user.is_admin
+
+    assert filter_entity_ids_by_permission(
+        user, ["light.allowed", "light.forbidden"], POLICY_READ
+    ) == ["light.allowed"]
+
+
+async def test_filter_entity_ids_by_permission_empty(hass: HomeAssistant) -> None:
+    """Test users with no permitted entities receive an empty list."""
+    user = MockUser()
+    user.mock_policy({})
+    assert not user.is_admin
+
+    assert filter_entity_ids_by_permission(user, ["light.forbidden"], POLICY_READ) == []

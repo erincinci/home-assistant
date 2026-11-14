@@ -1,31 +1,27 @@
 """Common code for permissions."""
-from typing import (  # noqa: F401
-    Mapping, Union, Any)
+
+from collections.abc import Mapping
 
 # MyPy doesn't support recursion yet. So writing it out as far as we need.
 
-ValueType = Union[
+type ValueType = (
     # Example: entities.all = { read: true, control: true }
-    Mapping[str, bool],
-    bool,
-    None
-]
+    Mapping[str, bool] | bool | None
+)
 
-SubCategoryType = Union[
-    # Example: entities.domains = { light: … }
-    Mapping[str, ValueType],
-    bool,
-    None
-]
+# Example: entities.domains = { light: … }
+type SubCategoryDict = Mapping[str, ValueType]
 
-CategoryType = Union[
+type SubCategoryType = SubCategoryDict | bool | None
+
+type CategoryType = (
     # Example: entities.domains
-    Mapping[str, SubCategoryType],
+    Mapping[str, SubCategoryType]
     # Example: entities.all
-    Mapping[str, ValueType],
-    bool,
-    None
-]
+    | Mapping[str, ValueType]
+    | bool
+    | None
+)
 
 # Example: { entities: … }
-PolicyType = Mapping[str, CategoryType]
+type PolicyType = Mapping[str, CategoryType]

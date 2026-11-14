@@ -1,78 +1,133 @@
-"""All constants related to the ZHA component."""
+"""Constants for the ZHA integration."""
 
-DEVICE_CLASS = {}
-SINGLE_INPUT_CLUSTER_DEVICE_CLASS = {}
-SINGLE_OUTPUT_CLUSTER_DEVICE_CLASS = {}
-CUSTOM_CLUSTER_MAPPINGS = {}
-COMPONENT_CLUSTERS = {}
+from enum import StrEnum
+
+EZSP_OVERWRITE_EUI64 = (
+    "i_understand_i_can_update_eui64_only_once_and_i_still_want_to_do_it"
+)
+
+ATTR_ACTIVE_COORDINATOR = "active_coordinator"
+ATTR_DURATION = "duration"
+ATTR_INSTALL_CODE = "install_code"
+ATTR_QR_CODE = "qr_code"
+ATTR_SOURCE_IEEE = "source_ieee"
+ATTR_ATTRIBUTES = "attributes"
+ATTR_AVAILABLE = "available"
+ATTR_DEVICE_TYPE = "device_type"
+ATTR_CLUSTER_NAME = "cluster_name"
+ATTR_ENDPOINT_NAMES = "endpoint_names"
+ATTR_IEEE = "ieee"
+ATTR_LAST_SEEN = "last_seen"
+ATTR_LQI = "lqi"
+ATTR_MANUFACTURER_CODE = "manufacturer_code"
+ATTR_NEIGHBORS = "neighbors"
+ATTR_NWK = "nwk"
+ATTR_POWER_SOURCE = "power_source"
+ATTR_QUIRK_APPLIED = "quirk_applied"
+ATTR_QUIRK_CLASS = "quirk_class"
+ATTR_EXPOSES_FEATURES = "exposes_features"
+ATTR_ROUTES = "routes"
+ATTR_RSSI = "rssi"
+ATTR_SIGNATURE = "signature"
+ATTR_SUCCESS = "success"
 
 
-def populate_data():
-    """Populate data using constants from bellows.
+CONF_ALARM_MASTER_CODE = "alarm_master_code"
+CONF_ALARM_FAILED_TRIES = "alarm_failed_tries"
+CONF_ALARM_ARM_REQUIRES_CODE = "alarm_arm_requires_code"
 
-    These cannot be module level, as importing bellows must be done in a
-    in a function.
-    """
-    from zigpy import zcl, quirks
-    from zigpy.profiles import PROFILES, zha, zll
-    from homeassistant.components.sensor import zha as sensor_zha
+CONF_RADIO_TYPE = "radio_type"
+CONF_USB_PATH = "usb_path"
+CONF_USE_THREAD = "use_thread"
+CONF_BAUDRATE = "baudrate"
+CONF_FLOW_CONTROL = "flow_control"
 
-    DEVICE_CLASS[zha.PROFILE_ID] = {
-        zha.DeviceType.ON_OFF_SWITCH: 'binary_sensor',
-        zha.DeviceType.LEVEL_CONTROL_SWITCH: 'binary_sensor',
-        zha.DeviceType.REMOTE_CONTROL: 'binary_sensor',
-        zha.DeviceType.SMART_PLUG: 'switch',
-        zha.DeviceType.LEVEL_CONTROLLABLE_OUTPUT: 'light',
-        zha.DeviceType.ON_OFF_LIGHT: 'light',
-        zha.DeviceType.DIMMABLE_LIGHT: 'light',
-        zha.DeviceType.COLOR_DIMMABLE_LIGHT: 'light',
-        zha.DeviceType.ON_OFF_LIGHT_SWITCH: 'binary_sensor',
-        zha.DeviceType.DIMMER_SWITCH: 'binary_sensor',
-        zha.DeviceType.COLOR_DIMMER_SWITCH: 'binary_sensor',
-    }
-    DEVICE_CLASS[zll.PROFILE_ID] = {
-        zll.DeviceType.ON_OFF_LIGHT: 'light',
-        zll.DeviceType.ON_OFF_PLUGIN_UNIT: 'switch',
-        zll.DeviceType.DIMMABLE_LIGHT: 'light',
-        zll.DeviceType.DIMMABLE_PLUGIN_UNIT: 'light',
-        zll.DeviceType.COLOR_LIGHT: 'light',
-        zll.DeviceType.EXTENDED_COLOR_LIGHT: 'light',
-        zll.DeviceType.COLOR_TEMPERATURE_LIGHT: 'light',
-        zll.DeviceType.COLOR_CONTROLLER: 'binary_sensor',
-        zll.DeviceType.COLOR_SCENE_CONTROLLER: 'binary_sensor',
-        zll.DeviceType.CONTROLLER: 'binary_sensor',
-        zll.DeviceType.SCENE_CONTROLLER: 'binary_sensor',
-        zll.DeviceType.ON_OFF_SENSOR: 'binary_sensor',
-    }
+CONF_ENABLE_QUIRKS = "enable_quirks"
+CONF_CUSTOM_QUIRKS_PATH = "custom_quirks_path"
 
-    SINGLE_INPUT_CLUSTER_DEVICE_CLASS.update({
-        zcl.clusters.general.OnOff: 'switch',
-        zcl.clusters.general.LevelControl: 'light',
-        zcl.clusters.measurement.RelativeHumidity: 'sensor',
-        zcl.clusters.measurement.TemperatureMeasurement: 'sensor',
-        zcl.clusters.measurement.PressureMeasurement: 'sensor',
-        zcl.clusters.measurement.IlluminanceMeasurement: 'sensor',
-        zcl.clusters.smartenergy.Metering: 'sensor',
-        zcl.clusters.homeautomation.ElectricalMeasurement: 'sensor',
-        zcl.clusters.security.IasZone: 'binary_sensor',
-        zcl.clusters.hvac.Fan: 'fan',
-    })
-    SINGLE_OUTPUT_CLUSTER_DEVICE_CLASS.update({
-        zcl.clusters.general.OnOff: 'binary_sensor',
-    })
+CONF_DEFAULT_LIGHT_TRANSITION = "default_light_transition"
+CONF_ENABLE_ENHANCED_LIGHT_TRANSITION = "enhanced_light_transition"
+CONF_ENABLE_LIGHT_TRANSITIONING_FLAG = "light_transitioning_flag"
+CONF_GROUP_MEMBERS_ASSUME_STATE = "group_members_assume_state"
 
-    # A map of device/cluster to component/sub-component
-    CUSTOM_CLUSTER_MAPPINGS.update({
-        (quirks.smartthings.SmartthingsTemperatureHumiditySensor, 64581):
-            ('sensor', sensor_zha.RelativeHumiditySensor)
-    })
+CONF_ENABLE_IDENTIFY_ON_JOIN = "enable_identify_on_join"
+CONF_CONSIDER_UNAVAILABLE_MAINS = "consider_unavailable_mains"
+CONF_CONSIDER_UNAVAILABLE_BATTERY = "consider_unavailable_battery"
+CONF_ENABLE_MAINS_STARTUP_POLLING = "enable_mains_startup_polling"
 
-    # A map of hass components to all Zigbee clusters it could use
-    for profile_id, classes in DEVICE_CLASS.items():
-        profile = PROFILES[profile_id]
-        for device_type, component in classes.items():
-            if component not in COMPONENT_CLUSTERS:
-                COMPONENT_CLUSTERS[component] = (set(), set())
-            clusters = profile.CLUSTERS[device_type]
-            COMPONENT_CLUSTERS[component][0].update(clusters[0])
-            COMPONENT_CLUSTERS[component][1].update(clusters[1])
+CONF_ZIGPY = "zigpy_config"
+CONF_DEVICE_CONFIG = "device_config"
+
+CUSTOM_CONFIGURATION = "custom_configuration"
+
+DATA_ZHA = "zha"
+DATA_ZHA_DEVICE_TRIGGER_CACHE = "zha_device_trigger_cache"
+
+DEFAULT_DATABASE_NAME = "zigbee.db"
+
+DEVICE_PAIRING_STATUS = "pairing_status"
+
+DOMAIN = "zha"
+
+LEGACY_ZEROCONF_PORT = 6638
+
+GROUP_ID = "group_id"
+
+
+GROUP_IDS = "group_ids"
+GROUP_NAME = "group_name"
+
+MFG_CLUSTER_ID_START = 0xFC00
+
+ZHA_ALARM_OPTIONS = "zha_alarm_options"
+ZHA_OPTIONS = "zha_options"
+
+# Dispatcher signal carrying device reconfigure progress events (bind result,
+# attribute reporting result, configure complete) to the websocket subscriber.
+SIGNAL_DEVICE_RECONFIGURE_EVENT = "zha_device_reconfigure_event"
+
+RESPONSE = "response"
+
+
+class ZHAService(StrEnum):
+    """Store keys for ZHA services."""
+
+    PERMIT = "permit"
+    REMOVE = "remove"
+    SET_ZIGBEE_CLUSTER_ATTRIBUTE = "set_zigbee_cluster_attribute"
+    ISSUE_ZIGBEE_CLUSTER_COMMAND = "issue_zigbee_cluster_command"
+    ISSUE_ZIGBEE_GROUP_COMMAND = "issue_zigbee_group_command"
+    WARNING_DEVICE_SQUAWK = "warning_device_squawk"
+    WARNING_DEVICE_WARN = "warning_device_warn"
+    CLEAR_LOCK_USER_CODE = "clear_lock_user_code"
+    ENABLE_LOCK_USER_CODE = "enable_lock_user_code"
+    DISABLE_LOCK_USER_CODE = "disable_lock_user_code"
+    SET_LOCK_USER_CODE = "set_lock_user_code"
+
+
+class ZHAServiceArgument(StrEnum):
+    """Store keys for ZHA service arguments."""
+
+    DURATION = "duration"
+    IEEE = "ieee"
+    SOURCE_IEEE = "source_ieee"
+    INSTALL_CODE = "install_code"
+    QR_CODE = "qr_code"
+    ENDPOINT_ID = "endpoint_id"
+    CLUSTER_ID = "cluster_id"
+    CLUSTER_TYPE = "cluster_type"
+    ATTRIBUTE = "attribute"
+    VALUE = "value"
+    MANUFACTURER = "manufacturer"
+    COMMAND = "command"
+    COMMAND_TYPE = "command_type"
+    ARGS = "args"
+    PARAMS = "params"
+    GROUP = "group"
+    MODE = "mode"
+    STROBE = "strobe"
+    LEVEL = "level"
+    DUTY_CYCLE = "duty_cycle"
+    INTENSITY = "intensity"
+    CODE_SLOT = "code_slot"
+    USER_CODE = "user_code"

@@ -1,74 +1,94 @@
-"""
-Support for ZoneMinder.
+"""Support for ZoneMinder."""
 
-For more details about this component, please refer to the documentation at
-https://home-assistant.io/components/zoneminder/
-"""
 import logging
 
-import voluptuous as vol
+import probatio
+from requests.exceptions import (
+    ConnectionError as RequestsConnectionError,
+    Timeout as RequestsTimeout,
+)
+from zoneminder.zm import ZoneMinder
 
 from homeassistant.const import (
-    CONF_HOST, CONF_PASSWORD, CONF_PATH, CONF_SSL, CONF_USERNAME,
-    CONF_VERIFY_SSL, ATTR_NAME)
-import homeassistant.helpers.config_validation as cv
+    CONF_HOST,
+    CONF_PASSWORD,
+    CONF_PATH,
+    CONF_SSL,
+    CONF_USERNAME,
+    CONF_VERIFY_SSL,
+    Platform,
+)
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers.discovery import async_load_platform
+from homeassistant.helpers.typing import ConfigType
+
+from .const import DOMAIN
+from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
 
-REQUIREMENTS = ['zm-py==0.1.0']
+CONF_PATH_ZMS = "path_zms"
 
-CONF_PATH_ZMS = 'path_zms'
-
-DEFAULT_PATH = '/zm/'
-DEFAULT_PATH_ZMS = '/zm/cgi-bin/nph-zms'
+DEFAULT_PATH = "/zm/"
+DEFAULT_PATH_ZMS = "/zm/cgi-bin/nph-zms"
 DEFAULT_SSL = False
 DEFAULT_TIMEOUT = 10
 DEFAULT_VERIFY_SSL = True
-DOMAIN = 'zoneminder'
 
-CONFIG_SCHEMA = vol.Schema({
-    DOMAIN: vol.Schema({
-        vol.Required(CONF_HOST): cv.string,
-        vol.Optional(CONF_PASSWORD): cv.string,
-        vol.Optional(CONF_PATH, default=DEFAULT_PATH): cv.string,
-        vol.Optional(CONF_PATH_ZMS, default=DEFAULT_PATH_ZMS): cv.string,
-        vol.Optional(CONF_SSL, default=DEFAULT_SSL): cv.boolean,
-        vol.Optional(CONF_USERNAME): cv.string,
-        vol.Optional(CONF_VERIFY_SSL, default=DEFAULT_VERIFY_SSL): cv.boolean,
-    })
-}, extra=vol.ALLOW_EXTRA)
+HOST_CONFIG_SCHEMA = probatio.Schema(
+    {
+        probatio.Required(CONF_HOST): cv.string,
+        probatio.Optional(probatio.Secret(CONF_PASSWORD)): cv.string,
+        probatio.Optional(CONF_PATH, default=DEFAULT_PATH): cv.string,
+        probatio.Optional(CONF_PATH_ZMS, default=DEFAULT_PATH_ZMS): cv.string,
+        probatio.Optional(CONF_SSL, default=DEFAULT_SSL): cv.boolean,
+        probatio.Optional(CONF_USERNAME): cv.string,
+        probatio.Optional(CONF_VERIFY_SSL, default=DEFAULT_VERIFY_SSL): cv.boolean,
+    }
+)
 
-SERVICE_SET_RUN_STATE = 'set_run_state'
-SET_RUN_STATE_SCHEMA = vol.Schema({
-    vol.Required(ATTR_NAME): cv.string
-})
+CONFIG_SCHEMA = probatio.Schema(
+    {DOMAIN: probatio.All(probatio.EnsureList(), [HOST_CONFIG_SCHEMA])},
+    extra=probatio.ALLOW_EXTRA,
+)
 
 
-def setup(hass, config):
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the ZoneMinder component."""
-    from zoneminder.zm import ZoneMinder
 
-    conf = config[DOMAIN]
-    if conf[CONF_SSL]:
-        schema = 'https'
-    else:
-        schema = 'http'
+    hass.data[DOMAIN] = {}
 
-    server_origin = '{}://{}'.format(schema, conf[CONF_HOST])
-    hass.data[DOMAIN] = ZoneMinder(server_origin,
-                                   conf.get(CONF_USERNAME),
-                                   conf.get(CONF_PASSWORD),
-                                   conf.get(CONF_PATH),
-                                   conf.get(CONF_PATH_ZMS),
-                                   conf.get(CONF_VERIFY_SSL))
+    success = True
 
-    def set_active_state(call):
-        """Set the ZoneMinder run state to the given state name."""
-        return hass.data[DOMAIN].set_active_state(call.data[ATTR_NAME])
+    for conf in config[DOMAIN]:
+        protocol = "https" if conf[CONF_SSL] else "http"
 
-    hass.services.register(
-        DOMAIN, SERVICE_SET_RUN_STATE, set_active_state,
-        schema=SET_RUN_STATE_SCHEMA
+        host_name = conf[CONF_HOST]
+        server_origin = f"{protocol}://{host_name}"
+        zm_client = ZoneMinder(
+            server_origin,
+            conf.get(CONF_USERNAME),
+            conf.get(CONF_PASSWORD),
+            conf.get(CONF_PATH),
+            conf.get(CONF_PATH_ZMS),
+            conf.get(CONF_VERIFY_SSL),
+        )
+        hass.data[DOMAIN][host_name] = zm_client
+
+        try:
+            success = await hass.async_add_executor_job(zm_client.login) and success
+        except (RequestsConnectionError, RequestsTimeout) as ex:
+            _LOGGER.error(
+                "ZoneMinder connection failure to %s: %s",
+                host_name,
+                ex,
+            )
+
+    async_setup_services(hass)
+
+    hass.async_create_task(
+        async_load_platform(hass, Platform.BINARY_SENSOR, DOMAIN, {}, config)
     )
 
-    return hass.data[DOMAIN].login()
+    return success

@@ -1,76 +1,79 @@
-"""
-Support for Twilio.
+"""Support for Twilio."""
 
-For more details about this component, please refer to the documentation at
-https://home-assistant.io/components/twilio/
-"""
-import voluptuous as vol
+from aiohttp import web
+import probatio
+from twilio.rest import Client
 
-import homeassistant.helpers.config_validation as cv
+from homeassistant.components import webhook
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_WEBHOOK_ID
-from homeassistant.helpers import config_entry_flow
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers import config_entry_flow, config_validation as cv
+from homeassistant.helpers.typing import ConfigType
 
-REQUIREMENTS = ['twilio==6.19.1']
-DEPENDENCIES = ['webhook']
+from .const import DATA_TWILIO, DOMAIN
 
-DOMAIN = 'twilio'
+CONF_ACCOUNT_SID = "account_sid"
+CONF_AUTH_TOKEN = "auth_token"
 
-CONF_ACCOUNT_SID = 'account_sid'
-CONF_AUTH_TOKEN = 'auth_token'
+RECEIVED_DATA = f"{DOMAIN}_data_received"
 
-DATA_TWILIO = DOMAIN
+CONFIG_SCHEMA = probatio.Schema(
+    {
+        probatio.Optional(DOMAIN): probatio.Schema(
+            {
+                probatio.Required(CONF_ACCOUNT_SID): cv.string,
+                probatio.Required(probatio.Secret(CONF_AUTH_TOKEN)): cv.string,
+            }
+        )
+    },
+    extra=probatio.ALLOW_EXTRA,
+)
 
-RECEIVED_DATA = '{}_data_received'.format(DOMAIN)
-
-CONFIG_SCHEMA = vol.Schema({
-    vol.Optional(DOMAIN): vol.Schema({
-        vol.Required(CONF_ACCOUNT_SID): cv.string,
-        vol.Required(CONF_AUTH_TOKEN): cv.string,
-    }),
-}, extra=vol.ALLOW_EXTRA)
+__all__ = [
+    "DOMAIN",
+    "get_client",
+]
 
 
-async def async_setup(hass, config):
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     """Set up the Twilio component."""
-    from twilio.rest import Client
     if DOMAIN not in config:
         return True
 
     conf = config[DOMAIN]
-    hass.data[DATA_TWILIO] = Client(
-        conf.get(CONF_ACCOUNT_SID), conf.get(CONF_AUTH_TOKEN))
+    hass.data[DATA_TWILIO] = await hass.async_add_executor_job(
+        Client, conf.get(CONF_ACCOUNT_SID), conf.get(CONF_AUTH_TOKEN)
+    )
     return True
 
 
-async def handle_webhook(hass, webhook_id, request):
-    """Handle incoming webhook from Twilio for inbound messages and calls."""
-    from twilio.twiml import TwiML
+def get_client(hass: HomeAssistant) -> Client:
+    """Return the Twilio client."""
+    return hass.data[DATA_TWILIO]
 
+
+async def handle_webhook(
+    hass: HomeAssistant, webhook_id: str, request: web.Request
+) -> web.Response:
+    """Handle incoming webhook from Twilio for inbound messages and calls."""
     data = dict(await request.post())
-    data['webhook_id'] = webhook_id
+    data["webhook_id"] = webhook_id
     hass.bus.async_fire(RECEIVED_DATA, dict(data))
 
-    return TwiML().to_xml()
+    return web.Response(text="")
 
 
-async def async_setup_entry(hass, entry):
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Configure based on config entry."""
-    hass.components.webhook.async_register(
-        DOMAIN, 'Twilio', entry.data[CONF_WEBHOOK_ID], handle_webhook)
-    return True
+    webhook.async_register(
+        hass, DOMAIN, "Twilio", entry.data[CONF_WEBHOOK_ID], handle_webhook
+    )
 
 
-async def async_unload_entry(hass, entry):
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Unload a config entry."""
-    hass.components.webhook.async_unregister(entry.data[CONF_WEBHOOK_ID])
-    return True
+    webhook.async_unregister(hass, entry.data[CONF_WEBHOOK_ID])
 
-config_entry_flow.register_webhook_flow(
-    DOMAIN,
-    'Twilio Webhook',
-    {
-        'twilio_url':
-            'https://www.twilio.com/docs/glossary/what-is-a-webhook',
-        'docs_url': 'https://www.home-assistant.io/components/twilio/'
-    }
-)
+
+async_remove_entry = config_entry_flow.webhook_async_remove_entry
